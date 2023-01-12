@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS second_settlement (
 초당매수거래대금 FLOAT(4),
 초당매도거래대금 FLOAT(4),
 초당거래대금 FLOAT(4),
-틱개수 INT
+틱개수 INT,
+최종수신번호 INT
 )"""
 
 CREATE_SECOND_BIDASK_TABLE = """
@@ -42,7 +43,8 @@ CREATE TABLE IF NOT EXISTS second_bidask (
 매수수량1 INT, 매수수량2 INT, 매수수량3 INT, 매수수량4 INT, 매수수량5 INT, 매수수량6 INT, 매수수량7 INT, 매수수량8 INT, 매수수량9 INT, 매수수량10 INT,
 매도호가총잔량 INT, 매수호가총잔량 INT, 순매수잔량 INT, 순매도잔량 INT, 매수호가총잔량직전대비 INT, 매도호가총잔량직전대비 INT,
 매수비율 FLOAT(4), 매도비율 FLOAT(4),
-틱개수 INT
+틱개수 INT,
+최종수신번호 INT
 )"""
 
 CALC_SECOND_SETTLEMENT = """
@@ -71,17 +73,35 @@ GROUP BY 날짜, 시간, 종목코드
 ORDER BY 종목코드 ASC, 시간 ASC
 """
 
+CALC_SECOND_SETTLEMENT_WITH_RECEIVE_NO = """
+with last_rows as (
+select 날짜, 시간, 종목코드, 현재가 as 종가, 등락율, 누적거래대금, 체결강도, 거래대금증감, 거래회전율, 전일거래량대비, 전일동시간거래량비율, 시가총액, 수신번호 as 최종수신번호 from settlement where 수신번호 in (select max(수신번호) from settlement s group by 시간, 종목코드)
+), first_rows as (
+select 날짜, 시간, 종목코드, 현재가 as 시가 from settlement where 수신번호 in (select min(수신번호) from settlement s group by 시간, 종목코드)
+), calc_rows as (
+select 날짜, 시간, 종목코드, MAX(고가) AS 고가, MIN(저가) AS 저가, SUM(체결거래량) AS 체결거래량, COUNT(*) AS 틱개수,
+SUM(CASE WHEN 체결거래량 > 0 THEN 체결거래량 ELSE 0 END) AS 초당매수수량,
+SUM(CASE WHEN 체결거래량 < 0 THEN -1*체결거래량 ELSE 0 END) AS 초당매도수량,
+SUM(CASE WHEN 체결거래량 > 0 THEN 현재가*체결거래량/1000000.0 ELSE 0.0 END) AS 초당매수거래대금,
+SUM(CASE WHEN 체결거래량 < 0 THEN -1*체결거래량*현재가/1000000.0 ELSE 0.0 END) AS 초당매도거래대금,
+SUM(CASE WHEN 체결거래량 < 0 THEN -1*체결거래량*현재가/1000000.0 ELSE 현재가*체결거래량/1000000.0 END) AS 초당거래대금
+from settlement group by 시간, 종목코드
+)
+select 날짜, 시간, 종목코드, 시가, 종가, 고가, 저가, 등락율, 누적거래대금, 체결강도, 거래대금증감, 거래회전율, 전일거래량대비, 전일동시간거래량비율, 시가총액, 체결거래량, 초당매수수량, 초당매도수량, 초당매수거래대금, 초당매도거래대금, 초당거래대금, 틱개수, 최종수신번호
+from last_rows
+inner join calc_rows using(날짜, 시간, 종목코드)
+inner join first_rows using(날짜, 시간, 종목코드)
+order by 종목코드 asc, 시간 asc
+"""
+
 CALC_SECOND_BIDASK = """
-WITH bidask_numbered AS (
-  SELECT b.*, ROW_NUMBER() OVER () AS rn
-  FROM bidask AS b
-), bidask_grouped_and_ranked AS (
+WITH bidask_grouped_and_ranked AS (
   SELECT bn.*, 
-  ROW_NUMBER() OVER (PARTITION BY 날짜, 시간, 종목코드 ORDER BY rn DESC) AS grouped_rn,
-  ROW_NUMBER() OVER (PARTITION BY 날짜, 시간, 종목코드 ORDER BY rn ASC) AS record_count
-  FROM bidask_numbered AS bn
+  ROW_NUMBER() OVER (PARTITION BY 날짜, 시간, 종목코드 ORDER BY 수신번호 DESC) AS grouped_rn,
+  ROW_NUMBER() OVER (PARTITION BY 날짜, 시간, 종목코드 ORDER BY 수신번호 ASC) AS record_count
+  FROM bidask AS bn
 ), second_end_bidask AS (
-  SELECT 날짜, 시간, 종목코드, record_count 틱개수,
+  SELECT 날짜, 시간, 종목코드, record_count 틱개수, 수신번호 최종수신번호,
   매도호가1, 매도호가2, 매도호가3, 매도호가4, 매도호가5, 매도호가6, 매도호가7, 매도호가8, 매도호가9, 매도호가10,
   매수호가1, 매수호가2, 매수호가3, 매수호가4, 매수호가5, 매수호가6, 매수호가7, 매수호가8, 매수호가9, 매수호가10,
   매도수량1, 매도수량2, 매도수량3, 매도수량4, 매도수량5, 매도수량6, 매도수량7, 매도수량8, 매도수량9, 매도수량10,
@@ -95,6 +115,29 @@ WITH bidask_numbered AS (
  LAG(매도호가총잔량) OVER (PARTITION BY 종목코드 ORDER BY 시간 ASC) - 매도호가총잔량 AS 매도호가총잔량직전대비
  FROM second_end_bidask seb
  ORDER BY 종목코드, 시간
+"""
+
+DETECT_CONSISTENCY_INJECTION_REQUIRED_ROW = """
+-- 호가 있으면서 작업 필요한 것 먼저 작업. 이후 forward fill.이후 호가 없었으면서 작업 필요한 것 작업
+with all_times as (
+select 시간 from (select * from second_settlement where 종목코드 = '%s')
+union
+select 시간 from (select * from second_bidask where 종목코드 = '%s')
+), need_processing as (
+select 시간, 
+SUM(CASE WHEN 체결거래량 > 0 THEN 체결거래량 ELSE 0 END) AS 매수체결거래량,
+SUM(CASE WHEN 체결거래량 < 0 THEN -1*체결거래량 ELSE 0 END) AS 매도체결거래량,
+호가최종수신번호
+from (select * from settlement where 종목코드 = '%s') single
+left join (select 시간, 최종수신번호 호가최종수신번호 from second_bidask where 종목코드 = '%s') using(시간)
+where 수신번호 > 호가최종수신번호 or 호가최종수신번호 is null
+group by 시간, 호가최종수신번호
+)
+select
+case when 매수체결거래량 is not null and 호가최종수신번호 is not null then 1 when 매수체결거래량 is not null and 호가최종수신번호 is null then 2 else 0 end as 작업순서, *
+from all_times
+left join need_processing using(시간)
+left join (select * from second_bidask where 종목코드 = '%s') using(시간)
 """
 
 CONVERT_TO_STOM = """
