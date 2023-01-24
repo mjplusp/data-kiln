@@ -1,10 +1,12 @@
 import os, sys
 from pathlib import Path
 import pandas as pd
+import numpy as np
+from datetime import datetime
 from utils.time_utils import execute_with_timer
 from query import (
-    CREATE_SECOND_SETTLEMENT_TABLE, CREATE_SECOND_BIDASK_TABLE, CREATE_STOM_TABLE,
-    CALC_SECOND_SETTLEMENT_WITH_RECEIVE_NO, CALC_SECOND_BIDASK,
+    CREATE_SECOND_SETTLEMENT_TABLE, CREATE_SECOND_BIDASK_TABLE, CREATE_STOM_TABLE, EXTRACT_DETAILED_TICK, CREATE_DETAILED_TICK_TABLE,
+    CALC_SECOND_SETTLEMENT_WITH_RECEIVE_NO, CALC_SECOND_BIDASK, 
     CONVERT_TO_STOM, GENERATE_INDEX
 )
 
@@ -26,7 +28,8 @@ class DataKiln:
     def prepare_processed_db(self):
         self.target_db.cursor.execute(CREATE_SECOND_SETTLEMENT_TABLE)
         self.target_db.cursor.execute(CREATE_SECOND_BIDASK_TABLE)
-    
+        self.target_db.cursor.execute(CREATE_DETAILED_TICK_TABLE)
+        
     @execute_with_timer
     def process_second_settlement_data(self) -> None:
         second_settlement =  pd.read_sql_query(CALC_SECOND_SETTLEMENT_WITH_RECEIVE_NO, self.target_db.conn)
@@ -62,20 +65,74 @@ class DataKiln:
         for code in target_stock:
             print(f"Current Stock: {code}")
             self.generate_singlestock_stom_backtest_table(code)
+    
+    # Detailed Bidask + settlement data
+    @execute_with_timer
+    def generate_detailed_singlestock_aggregated_table(self, code: str) -> None:
+        print(datetime.now())
+        single_stock_df =  pd.read_sql_query(EXTRACT_DETAILED_TICK.format(code,code), self.target_db.conn)
+        print("df 생성 완료")
+        print(datetime.now())
+
+        single_stock_df['종목코드'] = code
         
+        cols = ['현재가', '시가', '고가', '저가', '등락율', '누적거래대금', '체결강도', '거래대금증감', '전일거래량대비', '거래회전율', '전일동시간거래량비율', '시가총액']
+        single_stock_df.loc[:,cols] = single_stock_df.loc[:,cols].ffill()
+        
+        single_stock_df[['매수거래량']] = single_stock_df[['매수거래량']].fillna(value=0)
+        single_stock_df[['매도거래량']] = single_stock_df[['매도거래량']].fillna(value=0)
+        single_stock_df["process_needed"] = single_stock_df["매도호가총잔량"].apply(lambda x: np.isnan(x))
+
+        bidask_cols = ['매도호가총잔량', '매수호가총잔량', '매도호가총잔량직전대비', '매수호가총잔량직전대비', '순매수잔량', '매수비율', '순매도잔량', '매도비율',
+                '매도호가5', '매도호가4', '매도호가3', '매도호가2', '매도호가1', '매수호가1', '매수호가2', '매수호가3', '매수호가4', '매수호가5',
+                '매도수량5', '매도수량4', '매도수량3', '매도수량2', '매도수량1', '매수수량1', '매수수량2', '매수수량3', '매수수량4', '매수수량5']
+        single_stock_df.loc[:,bidask_cols] = single_stock_df.loc[:,bidask_cols].ffill()
+        print("ffill 완료")
+        print(datetime.now())
+
+        # print(single_stock_df.query('process_needed == true'))
+
+        single_stock_df = single_stock_df.reset_index()
+        for index, row in single_stock_df.iterrows():
+            if row['process_needed']:
+                last_row = single_stock_df.iloc[[index-1]]
+
+                row['매도호가총잔량'] = last_row['매도호가총잔량'] - row['매수거래량']
+                row['매수호가총잔량'] = last_row['매수호가총잔량'] - row['매도거래량']
+
+                row['순매수잔량'] = last_row['매수호가총잔량'] - last_row['매도호가총잔량'] + row['매수거래량'] - row['매도거래량']
+                row['순매도잔량'] = last_row['매도호가총잔량'] - last_row['매수호가총잔량'] - row['매수거래량'] + row['매도거래량']
+                row['매수비율'] = row['매수호가총잔량'] / row['매도호가총잔량']
+                row['매도비율'] = row['매도호가총잔량'] / row['매수호가총잔량']
+
+                row['매도호가총잔량직전대비'] = -row['매수거래량']
+                row['매수호가총잔량직전대비'] = -row['매도거래량']
+
+                row['매수수량1'] = last_row['매수수량1'] - row['매도거래량']
+                row['매도수량1'] = last_row['매도수량1'] - row['매수거래량']
+
+                single_stock_df.iloc[[index]] = row
+                # print(row)
+        
+        single_stock_df = single_stock_df.drop(columns=['process_needed', 'index'])
+        insert_list(single_stock_df.values.tolist(), single_stock_df.columns, self.target_db, "detailed_tick")    
+        # insert_df(single_stock_df, self.target_db, "detailed_tick")
+
 if __name__ == "__main__":
 
     TEST_PROCESSED_DB_DIR = root_folder + "/test"
     TEST_TARGET_DB_DIR = root_folder + "/test"
     print("Data Kiln Started")
 
-    kiln = DataKiln(TEST_TARGET_DB_DIR, TEST_PROCESSED_DB_DIR, '20230109')
+    kiln = DataKiln(TEST_TARGET_DB_DIR, TEST_PROCESSED_DB_DIR, '20230116')
 
-    print("Processing Settlement Data")
-    kiln.process_second_settlement_data()
-    print("Processing Bidask Data")
-    kiln.process_second_bidask_data()
+    # print("Processing Settlement Data")
+    # kiln.process_second_settlement_data()
+    # print("Processing Bidask Data")
+    # kiln.process_second_bidask_data()
 
     # print("Converting to STOM format")
     # kiln.generate_stom_backtest_db()
+
+    kiln.generate_detailed_singlestock_aggregated_table("347770")
 

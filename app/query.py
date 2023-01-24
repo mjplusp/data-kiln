@@ -47,6 +47,50 @@ CREATE TABLE IF NOT EXISTS second_bidask (
 최종수신번호 INT
 )"""
 
+CREATE_DETAILED_TICK_TABLE = """
+CREATE TABLE IF NOT EXISTS detailed_tick (
+날짜 VARCHAR(8), 시간 VARCHAR(6), 수신시간 VARCHAR(15), 종목코드 VARCHAR(255),
+현재가 INT, 시가 INT, 고가 INT, 저가 INT, 
+등락율 FLOAT(4),
+누적거래대금 INT,
+체결강도 FLOAT(4),
+거래대금증감 INT,
+전일거래량대비 FLOAT(4),
+거래회전율 FLOAT(4),
+전일동시간거래량비율 FLOAT(4),
+시가총액 FLOAT(4),
+매수거래량 INT,
+매도거래량 INT,
+매도호가총잔량 INT,
+매수호가총잔량 INT,
+매도호가총잔량직전대비 INT,
+매수호가총잔량직전대비 INT,
+순매수잔량 INT,
+매수비율 FLOAT(4),
+순매도잔량 INT,
+매도비율 FLOAT(4),
+매도호가5 INT,
+매도호가4 INT,
+매도호가3 INT,
+매도호가2 INT,
+매도호가1 INT,
+매수호가1 INT,
+매수호가2 INT,
+매수호가3 INT,
+매수호가4 INT,
+매수호가5 INT,
+매도수량5 INT,
+매도수량4 INT,
+매도수량3 INT,
+매도수량2 INT,
+매도수량1 INT,
+매수수량1 INT,
+매수수량2 INT,
+매수수량3 INT,
+매수수량4 INT,
+매수수량5 INT
+)"""
+
 CALC_SECOND_SETTLEMENT = """
 SELECT 날짜, 시간, 종목코드, 
 FIRST_VALUE(현재가) OVER(PARTITION BY 날짜, 시간, 종목코드 ORDER BY rn ASC) AS 시가,
@@ -165,4 +209,32 @@ order by cast(날짜 || 시간 as integer)
 
 GENERATE_INDEX = """
 Create Index if not exists ix_%s_index On "%s"('index');
+"""
+
+EXTRACT_DETAILED_TICK = """
+with filtered_settlement as (
+select * from settlement s where 시간 >= '090000' and 종목코드 = '{}'
+), filtered_bidask as (
+select * from bidask where 시간 >= '090000' and 종목코드 = '{}'
+)
+select COALESCE(fs.날짜, fb.날짜) 날짜, COALESCE(fs.시간, fb.시간) 시간, strftime('%H:%M:%f', COALESCE(fs.수신시간, fb.수신시간)/1000000000.0, 'unixepoch', 'localtime') 수신시간, 현재가, 시가, 고가, 저가, 등락율, 누적거래대금, 체결강도, 거래대금증감,
+전일거래량대비, 거래회전율, 전일동시간거래량비율, 시가총액, 
+CASE WHEN 체결거래량 > 0 THEN 체결거래량 ELSE 0 END 매수거래량,
+CASE WHEN 체결거래량 > 0 THEN 0 ELSE -1*체결거래량 END 매도거래량,
+매도호가총잔량, 매수호가총잔량, 매도호가총잔량직전대비, 매수호가총잔량직전대비, 순매수잔량, 매수비율, 순매도잔량, 매도비율,
+매도호가5, 매도호가4, 매도호가3, 매도호가2, 매도호가1, 매수호가1, 매수호가2, 매수호가3, 매수호가4, 매수호가5, 
+매도수량5, 매도수량4, 매도수량3, 매도수량2, 매도수량1, 매수수량1, 매수수량2, 매수수량3, 매수수량4, 매수수량5
+from filtered_settlement fs
+left join filtered_bidask fb using(수신시간)
+union
+select COALESCE(fs.날짜, fb.날짜) 날짜, COALESCE(fs.시간, fb.시간) 시간, strftime('%H:%M:%f', COALESCE(fs.수신시간, fb.수신시간)/1000000000.0, 'unixepoch', 'localtime') 수신시간, 현재가, 시가, 고가, 저가, 등락율, 누적거래대금, 체결강도, 거래대금증감,
+전일거래량대비, 거래회전율, 전일동시간거래량비율, 시가총액, 
+CASE WHEN 체결거래량 > 0 THEN 체결거래량 ELSE 0 END 매수거래량,
+CASE WHEN 체결거래량 > 0 THEN 0 ELSE -1*체결거래량 END 매도거래량,
+매도호가총잔량, 매수호가총잔량, 매도호가총잔량직전대비, 매수호가총잔량직전대비, 순매수잔량, 매수비율, 순매도잔량, 매도비율,
+매도호가5, 매도호가4, 매도호가3, 매도호가2, 매도호가1, 매수호가1, 매수호가2, 매수호가3, 매수호가4, 매수호가5, 
+매도수량5, 매도수량4, 매도수량3, 매도수량2, 매도수량1, 매수수량1, 매수수량2, 매수수량3, 매수수량4, 매수수량5
+from filtered_bidask fb
+left join filtered_settlement fs using(수신시간)
+order by 수신시간
 """
