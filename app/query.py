@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS second_bidask (
 
 CREATE_DETAILED_TICK_TABLE = """
 CREATE TABLE IF NOT EXISTS detailed_tick (
-날짜 VARCHAR(8), 시간 VARCHAR(6), 수신시간 VARCHAR(15), 종목코드 VARCHAR(255),
+날짜 VARCHAR(8), 시간 VARCHAR(6), 수신시간 VARCHAR(15), 수신번호 INT, 종목코드 VARCHAR(255),
 현재가 INT, 시가 INT, 고가 INT, 저가 INT, 
 등락율 FLOAT(4),
 누적거래대금 INT,
@@ -88,7 +88,17 @@ CREATE TABLE IF NOT EXISTS detailed_tick (
 매수수량2 INT,
 매수수량3 INT,
 매수수량4 INT,
-매수수량5 INT
+매수수량5 INT,
+매도수량변화5 INT,
+매도수량변화4 INT,
+매도수량변화3 INT,
+매도수량변화2 INT,
+매도수량변화1 INT,
+매수수량변화1 INT,
+매수수량변화2 INT,
+매수수량변화3 INT,
+매수수량변화4 INT,
+매수수량변화5 INT
 )"""
 
 CALC_SECOND_SETTLEMENT = """
@@ -212,29 +222,23 @@ Create Index if not exists ix_%s_index On "%s"('index');
 """
 
 EXTRACT_DETAILED_TICK = """
-with filtered_settlement as (
-select * from settlement s where 시간 >= '090000' and 종목코드 = '{}'
-), filtered_bidask as (
-select * from bidask where 시간 >= '090000' and 종목코드 = '{}'
-)
-select COALESCE(fs.날짜, fb.날짜) 날짜, COALESCE(fs.시간, fb.시간) 시간, strftime('%H:%M:%f', COALESCE(fs.수신시간, fb.수신시간)/1000000000.0, 'unixepoch', 'localtime') 수신시간, 현재가, 시가, 고가, 저가, 등락율, 누적거래대금, 체결강도, 거래대금증감,
-전일거래량대비, 거래회전율, 전일동시간거래량비율, 시가총액, 
+with filtered_settlement as (select * from settlement s where 시간 >= '090000' and 종목코드 = '{}'),
+filtered_bidask as (select * from bidask where 시간 >= '090000' and 종목코드 = '{}')
+select 날짜, 시간, strftime('%H:%M:%f', 수신시간/1000000000.0, 'unixepoch', 'localtime') 수신시간, 수신번호, 
+현재가, 시가, 고가, 저가, 등락율, 누적거래대금, 체결강도, 거래대금증감, 전일거래량대비, 거래회전율, 전일동시간거래량비율, 시가총액, 
 CASE WHEN 체결거래량 > 0 THEN 체결거래량 ELSE 0 END 매수거래량,
 CASE WHEN 체결거래량 > 0 THEN 0 ELSE -1*체결거래량 END 매도거래량,
-매도호가총잔량, 매수호가총잔량, 매도호가총잔량직전대비, 매수호가총잔량직전대비, 순매수잔량, 매수비율, 순매도잔량, 매도비율,
-매도호가5, 매도호가4, 매도호가3, 매도호가2, 매도호가1, 매수호가1, 매수호가2, 매수호가3, 매수호가4, 매수호가5, 
-매도수량5, 매도수량4, 매도수량3, 매도수량2, 매도수량1, 매수수량1, 매수수량2, 매수수량3, 매수수량4, 매수수량5
+null as 매도호가총잔량, null as 매수호가총잔량, null as 매도호가총잔량직전대비, null as 매수호가총잔량직전대비, null as 순매수잔량, null as 매수비율, null as 순매도잔량, null as 매도비율, 
+null as 매도호가5, null as 매도호가4, null as 매도호가3, null as 매도호가2, null as 매도호가1, null as 매수호가1, null as 매수호가2, null as 매수호가3, null as 매수호가4, null as 매수호가5,
+null as 매도수량5, null as 매도수량4, null as 매도수량3, null as 매도수량2, null as 매도수량1, null as 매수수량1, null as 매수수량2, null as 매수수량3, null as 매수수량4, null as 매수수량5
 from filtered_settlement fs
-left join filtered_bidask fb using(수신시간)
 union
-select COALESCE(fs.날짜, fb.날짜) 날짜, COALESCE(fs.시간, fb.시간) 시간, strftime('%H:%M:%f', COALESCE(fs.수신시간, fb.수신시간)/1000000000.0, 'unixepoch', 'localtime') 수신시간, 현재가, 시가, 고가, 저가, 등락율, 누적거래대금, 체결강도, 거래대금증감,
-전일거래량대비, 거래회전율, 전일동시간거래량비율, 시가총액, 
-CASE WHEN 체결거래량 > 0 THEN 체결거래량 ELSE 0 END 매수거래량,
-CASE WHEN 체결거래량 > 0 THEN 0 ELSE -1*체결거래량 END 매도거래량,
+select 날짜, 시간, strftime('%H:%M:%f', 수신시간/1000000000.0, 'unixepoch', 'localtime') 수신시간, 수신번호,
+null as 현재가, null as 시가, null as 고가, null as 저가, null as 등락율, null as 누적거래대금, null as 체결강도, null as 거래대금증감,
+null as 전일거래량대비, null as 거래회전율, null as 전일동시간거래량비율, null as 시가총액, null as  매수거래량, null as  매도거래량,
 매도호가총잔량, 매수호가총잔량, 매도호가총잔량직전대비, 매수호가총잔량직전대비, 순매수잔량, 매수비율, 순매도잔량, 매도비율,
 매도호가5, 매도호가4, 매도호가3, 매도호가2, 매도호가1, 매수호가1, 매수호가2, 매수호가3, 매수호가4, 매수호가5, 
 매도수량5, 매도수량4, 매도수량3, 매도수량2, 매도수량1, 매수수량1, 매수수량2, 매수수량3, 매수수량4, 매수수량5
 from filtered_bidask fb
-left join filtered_settlement fs using(수신시간)
-order by 수신시간
+order by 수신번호
 """
