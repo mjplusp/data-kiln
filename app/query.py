@@ -12,6 +12,22 @@ CREATE TABLE IF NOT EXISTS '%s' (
 "초당체결틱수" INT, "초당호가틱수" INT
 )"""
 
+CREATE_SECOND_MERGED_TABLE = """
+CREATE TABLE IF NOT EXISTS 'second_total' (
+날짜 VARCHAR(8), 시간 VARCHAR(6), 종목코드 VARCHAR(255),
+현재가 INTEGER, 시가 INTEGER, 고가 INTEGER, 저가 INTEGER,
+등락율 FLOAT(4), 
+누적거래대금 INT, 
+체결강도 FLOAT(4), 거래대금증감 INT,
+전일거래량대비 FLOAT(4), 거래회전율 FLOAT(4), 전일동시간거래량비율 FLOAT(4), 시가총액 FLOAT(4), 초당매수수량 INT, 초당매도수량 INT, 초당거래대금 FLOAT(4),
+매도호가총잔량 INT, 매수호가총잔량 INT,
+매도호가10 INT, 매도호가9 INT, 매도호가8 INT, 매도호가7 INT, 매도호가6 INT, 매도호가5 INT, 매도호가4 INT, 매도호가3 INT, 매도호가2 INT, 매도호가1 INT, 
+매수호가1 INT, 매수호가2 INT, 매수호가3 INT, 매수호가4 INT, 매수호가5 INT, 매수호가6 INT, 매수호가7 INT, 매수호가8 INT, 매수호가9 INT, 매수호가10 INT,
+매도수량10 INT, 매도수량9 INT, 매도수량8 INT, 매도수량7 INT, 매도수량6 INT, 매도수량5 INT, 매도수량4 INT, 매도수량3 INT, 매도수량2 INT, 매도수량1 INT, 
+매수수량1 INT, 매수수량2 INT, 매수수량3 INT, 매수수량4 INT, 매수수량5 INT, 매수수량6 INT, 매수수량7 INT, 매수수량8 INT, 매수수량9 INT, 매수수량10 INT,
+초당체결틱수 INT, 초당호가틱수 INT)
+"""
+
 CREATE_SECOND_SETTLEMENT_TABLE = """
 CREATE TABLE IF NOT EXISTS second_settlement (
 날짜 VARCHAR(8), 시간 VARCHAR(6), 종목코드 VARCHAR(255),
@@ -272,6 +288,27 @@ case when 매수체결거래량 is not null and 호가최종수신번호 is not 
 from all_times
 left join need_processing using(시간)
 left join (select * from second_bidask where 종목코드 = '%s') using(시간)
+"""
+
+MERGE_SECOND_DATA = """
+select 날짜, 시간, 종목코드, 종가 현재가, 시가, 고가, 저가, 등락율, 누적거래대금, 체결강도, 거래대금증감,
+전일거래량대비, 거래회전율, 전일동시간거래량비율, 시가총액, 초당매수수량, 초당매도수량, 초당거래대금,
+매도호가총잔량, 매수호가총잔량,
+매도호가10, 매도호가9, 매도호가8, 매도호가7, 매도호가6, 매도호가5, 매도호가4, 매도호가3, 매도호가2, 매도호가1, 매수호가1, 매수호가2, 매수호가3, 매수호가4, 매수호가5, 매수호가6, 매수호가7, 매수호가8, 매수호가9, 매수호가10,
+매도수량10, 매도수량9, 매도수량8, 매도수량7, 매도수량6, 매도수량5, 매도수량4, 매도수량3, 매도수량2, 매도수량1, 매수수량1, 매수수량2, 매수수량3, 매수수량4, 매수수량5, 매수수량6, 매수수량7, 매수수량8, 매수수량9, 매수수량10,
+ss.틱개수 초당체결틱수, sb.틱개수 초당호가틱수
+from (select * from second_settlement where 종목코드 = '%s') ss 
+left join (select * from second_bidask where 종목코드 = '%s') sb using(날짜, 시간, 종목코드)
+union
+select 날짜, 시간, 종목코드, 종가 현재가, 시가, 고가, 저가, 등락율, 누적거래대금, 체결강도, 거래대금증감,
+전일거래량대비, 거래회전율, 전일동시간거래량비율, 시가총액, 초당매수수량, 초당매도수량, 초당거래대금,
+매도호가총잔량, 매수호가총잔량,
+매도호가10, 매도호가9, 매도호가8, 매도호가7, 매도호가6, 매도호가5, 매도호가4, 매도호가3, 매도호가2, 매도호가1, 매수호가1, 매수호가2, 매수호가3, 매수호가4, 매수호가5, 매수호가6, 매수호가7, 매수호가8, 매수호가9, 매수호가10,
+매도수량10, 매도수량9, 매도수량8, 매도수량7, 매도수량6, 매도수량5, 매도수량4, 매도수량3, 매도수량2, 매도수량1, 매수수량1, 매수수량2, 매수수량3, 매수수량4, 매수수량5, 매수수량6, 매수수량7, 매수수량8, 매수수량9, 매수수량10,
+ss.틱개수 초당체결틱수, sb.틱개수 초당호가틱수
+from (select * from second_bidask where 종목코드 = '%s') sb
+left join (select * from second_settlement where 종목코드 = '%s') ss using(날짜, 시간, 종목코드)
+order by 시간
 """
 
 CONVERT_TO_STOM = """
