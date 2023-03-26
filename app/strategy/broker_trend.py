@@ -17,7 +17,7 @@ select * from broker_transaction
 """
 
 QUERY_SETTLEMENT = """
-select "날짜", "시간", "종목코드", "현재가", "누적거래대금", "거래대금증감", "전일동시간거래량비율", "체결강도" from settlement 
+select "날짜", "시간", "종목코드", "현재가", "누적거래대금", "거래대금증감", "전일동시간거래량비율", "체결강도", "시가총액" from settlement 
 --where 종목코드 in ('347770','005930')
 """
 
@@ -91,7 +91,7 @@ class BrokerTrend:
         target_broker_trend.update(target_broker_trend.groupby(["종목코드"])["signal_buy"].ffill())
 
         signals = target_broker_trend[target_broker_trend["signal_buy"].notnull()]
-        hhf = signals.groupby('종목코드')[["시간","target_metric"]].first()
+        hhf = signals.groupby('종목코드')[["시가총액","시간","target_metric"]].first()
         first = signals.groupby('종목코드')["현재가"].first().rename("매수가")
         last = signals.groupby('종목코드')["현재가"].last().rename("종가")
         min = signals.groupby('종목코드')["현재가"].min().rename("저가")
@@ -206,7 +206,7 @@ class BrokerTrend:
 if __name__ == "__main__":
     # time it
     start_time = time.time()
-    bt = BrokerTrend(date="2023-03-15", code=[
+    bt = BrokerTrend(date="2023-03-03", code=[
         #
     ])
     bt.find_signals()
